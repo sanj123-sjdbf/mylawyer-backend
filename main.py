@@ -1,61 +1,44 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import openai
-import os
-import tempfile
 
-# Load your OpenAI API key from environment variable
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
-# Allow frontend requests (adjust origin in production)
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # You can restrict to specific domains later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.post("/analyze")
-async def analyze_contract(file: UploadFile = File(...)):
+async def analyze(file: UploadFile = File(...)):
+    contents = await file.read()
+    text = contents.decode("utf-8", errors="ignore")
+
+    prompt = f"Read this contract and explain the key points simply:\n{text}"
+
     try:
-        # Read uploaded file
-        contents = await file.read()
-
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-
-        # Read file content as text
-        with open(tmp_path, "r", encoding="utf-8", errors="ignore") as f:
-            contract_text = f.read()
-
-        os.remove(tmp_path)
-
-        # GPT-4o Prompt
-        prompt = (
-            "You are a legal AI assistant. Read the contract below. "
-            "Summarise key clauses, obligations, risks, and any hidden traps. "
-            "Explain it in plain English.\n\n"
-            f"{contract_text}\n\nSummary:"
-        )
-
         response = openai.ChatCompletion.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a helpful legal assistant."},
+                {"role": "system", "content": "You're a legal assistant that explains contracts in simple language."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.5,
-            max_tokens=1000
+            max_tokens=1000,
+            temperature=0.5
         )
-
-        summary = response["choices"][0]["message"]["content"]
-        return JSONResponse(content={"summary": summary})
+        result = response['choices'][0]['message']['content']
+        return {"result": result}
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return {"error": str(e)}
